@@ -28,12 +28,27 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
   ```clojure
   {:method       "tools/call"            ; string
    :doc          "Calls a tool"          ; string, required
+   :input-schema {:type "object"}        ; InputSchema, required
    :interceptors [#(fn [context] ...)]   ; vector of fns, run before handler-fn
    :handler-fn   (fn [context] ...)      ; fn
    :type         :notification}          ; :request | :notification
   ```
   - `:doc` is a **required** key (`s/Str`), not a comment or an optional annotation. A handler without it fails
     `s/validate` at init with `{:doc missing-required-key}`.
+  - `:input-schema` (`models.handler/InputSchema`) is **required** too, and is a **JSON Schema** map — not a
+    prismatic schema. It is the payload MCP expects under `inputSchema` in `tools/list`, and it is the contract
+    the client reads to know what a tool call takes, so it is stored exactly as it goes on the wire:
+    ```clojure
+    {:type        "object"                    ; required, always "object"
+     :properties  {:period {:type "string"}}  ; optional
+     :required    [:period]}                  ; optional
+    ```
+    `:type` is pinned because it is MCP's requirement and the likeliest typo (`:type :object`, a keyword, fails
+    with `{:type (not (= "object" :object))}`); a tool with no params still declares `{:type "object"}`.
+    `:required` holds keywords, not strings — that is what we write in Clojure, and the encoder renders them as
+    the strings JSON Schema wants, so `:required ["period"]` is a bug. See **Conventions** for how the schema is
+    kept tight. Nothing consumes `:input-schema` yet — there is no `tools/list` handler — so it is documentation
+    until that lands.
   - `register-handler!` is a `defmulti` dispatching on `(:type handler)`, with an `s/defmethod` per type. Each
     method calls `defmethod` on the matching jsonrpc4clj multimethod — `receive-request` for `:request`,
     `receive-notification` for `:notification` — so the multimethod on the *jsonrpc4clj* side is chosen by
@@ -97,6 +112,26 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
   - Thin wrappers over third-party types go in that component's `adapters/` subfolder, named after what they adapt
     (`adapters/interceptor.clj` -> `grass.<component>.adapters.interceptor`), as in
     `telegrama/component/adapters/event.clj`. Adapters are public; keep helpers `^:private` inside `component.clj`.
+- **Write schemas as tight as the data allows.** Every rule here exists to make a mistake fail loudly at
+  `s/validate` instead of passing quietly:
+  - Keep map schemas **closed** — no `s/Any` catch-all entry. Then a typo'd key is a `{:propertys disallowed-key}`
+    at init rather than a wrong value that reaches the client. Widen the map only when something actually needs
+    the extra key; don't pre-pay for keywords no tool uses.
+  - Name the **narrowest** schema that fits: `[s/Keyword]` not `[s/Any]`, `(s/pred map?)` not `s/Any`,
+    `(s/eq "object")` not `s/Any`. Every widening is a class of mistake you stop catching.
+  - `s/eq` is one allowed value, `s/enum` is a set of them — they are not interchangeable, and the names do not
+    suggest which is which. `s/eq` builds `#(= v %)`, `s/enum` is variadic and builds `(set vs)`. So a single
+    fixed value is `(s/eq "object")`, not a one-element `(s/enum "object")`; the two validate the same thing, but
+    the failure message then says `(not (= "object" :object))` instead of `(not (#{"object"} :object))`, and the
+    first one tells you what it wanted. A real 2+-value case like `(s/enum :request :notification)` stays `s/enum`.
+  - Mind the `s/Any`-key trap: inside a map schema a **non-keyword** key schema is prismatic's *extra-keys*
+    catch-all. So `{s/Any s/Any}` does not mean "a map with arbitrary keys" — it means "accept every key", and
+    it does so without looking loose in the source. That is a reason to reach for `(s/pred map?)` instead.
+  - Prismatic 1.4.1 behaviour worth checking in a REPL rather than guessing, because none of it is obvious:
+    map schemas are **closed by default** and there is no `s/StrictMap` in this version; `s/maybe` in a map value
+    position does **not** make the key optional (`{:a (s/maybe s/Int)}` still fails on `{}` with
+    `{:a missing-required-key}`) — use `(s/optional-key :a)`; and `(s/optional-key :a)` still closes the map
+    against unlisted keys.
 
 ## Testing
 
