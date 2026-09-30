@@ -51,10 +51,35 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
 - **stdout is the protocol.** Any stray `println` corrupts the client's stream. Inside the `receive-*` multimethods
   `*out*` is already discarded (so a `println` there vanishes and is *not* a bug), but background threads and
   startup code need `jsonrpc4clj.server/discarding-stdout`. Debug with `*err*`.
+  - `clojure.tools.logging` needs a backend or it is a **silent no-op** — `tools.logging` only ships the SLF4J
+    facade, and SLF4J's own default is NOP. `[org.slf4j/slf4j-simple "2.0.17"]` is in `:dependencies` for this
+    reason; without it every `log/info` in the project silently vanishes (it did — the `init-key`/shutdown-hook
+    logging was invisible until this was added). `slf4j-simple` writes to **stderr** by default, which is
+    exactly right here. Siblings use `com.taoensso/timbre` + `tools.logging` (`beagle-cli`, `baiacu`) or
+    `ch.qos.logback/logback-classic` (`common-clj`); `slf4j-simple` is the smallest thing that makes the calls
+    visible and needs no `resources/logback.xml`.
 - Wire framing is LSP-style: `Content-Length: N\r\n\r\n<json>`. Server-side errors land on `(:log-ch server)`,
   which nothing consumes yet — subscribe to it when debugging.
 - Consider `mcp-clojure-sdk` (unravel-team) — a Clojure MCP SDK built on this same lib — before hand-rolling more.
-- `grass.components` is the REPL init namespace, not a real entrypoint. There is no system entrypoint yet; `grass.components/foo` is a placeholder from the project template.
+- `grass.components` is the system entrypoint and the REPL init ns (`:main grass.components`). It holds the
+  Integrant `arrangement` and `-main`; it defines no `ig/init-key` of its own.
+  - The AUVP token is parsed with `clojure.tools.cli` from `-t` / `--auvp-token TOKEN`, carried in
+    `cli-options` (declared with `:id :auvp-token` and `:missing "--auvp-token is required"`). Run it as
+    `lein run -- --auvp-token <token>`. `parse-opts` returns errors rather than throwing, so `-main` checks
+    `errors` itself: a `when errors` guard `(log/error summary)` and exits 1, then `start-system!` runs
+    unconditionally below it. The `:errors` messages themselves are discarded, so a typo, a missing token, and a
+    flag with no value all produce identical output — deliberately, the usage line is enough for a one-option
+    CLI. The explicit exit matters: without it the process reports 0 on a misconfigured launch, which reads as
+    "started and shut down cleanly" to the client subprocess that launched it.
+  - The token is threaded into the arrangement as `{:components {:auvp {:token ...}}}`, so a handler reads it
+    with `(get-in context [:components :auvp :token])`. It is a plain map, not an Integrant component — making
+    it one would need a real `ig/init-key` just to hold a string.
+  - `start-system!` calls `jsonrpc4clj.server/discarding-stdout` **before** `ig/init`, because stdout is the
+    JSON-RPC wire and anything logged or printed after startup would corrupt the client's stream.
+  - It registers the JVM shutdown hook per the style guide — `(.addShutdownHook (Runtime/getRuntime) (Thread.
+    #(ig/halt! system)))` — which is also what lets `ig/halt!` close the `ChanServer`.
+  - `:handlers` is currently `[]`: the component starts and answers nothing yet. Adding a tool means adding
+    its handler to that vector, not to the component.
 
 ## Conventions
 

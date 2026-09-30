@@ -10,13 +10,17 @@
   :dependencies [[org.clojure/clojure "1.12.6"]
                  [integrant "1.0.1"]
                  [org.clojure/tools.logging "1.3.1"]
+                 [org.slf4j/slf4j-simple "2.0.17"]
                  [com.github.clojure-lsp/jsonrpc4clj "1.0.2"]
                  [prismatic/schema "1.4.1"]
+                 [org.clojure/tools.cli "1.4.256"]
                  [io.pedestal/pedestal.interceptor "0.8.1"]]
 
   :plugins [[com.github.liquidz/antq "RELEASE"]]
 
   :profiles {:dev {:test-paths   ["test/unit" "test/integration" "test/helpers"]
                    :dependencies [[nubank/matcher-combinators "3.10.0"]]}}
+
+  :main grass.components
 
   :repl-options {:init-ns grass.components})
