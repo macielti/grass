@@ -18,23 +18,21 @@
    (concat (map #(adapters.interceptor/fn->interceptor :interceptor %) interceptors)
            [(adapters.interceptor/fn->interceptor :handler-fn handler-fn)])))
 
-(s/defn ^:private register-request-handler!
+(defmulti ^:private register-handler!
+  (s/fn [handler :- models.handler/Handler]
+    (:type handler)))
+
+(s/defmethod register-handler! :request
   [{:keys [method] :as handler} :- models.handler/Handler]
   (defmethod server/receive-request method
     [_ context params]
     (execute-handler! handler context params)))
 
-(s/defn ^:private register-notification-handler!
+(s/defmethod register-handler! :notification
   [{:keys [method] :as handler} :- models.handler/Handler]
   (defmethod server/receive-notification method
     [_ context params]
     (execute-handler! handler context params)))
-
-(s/defn ^:private register-handler!
-  [{:keys [type] :as handler} :- models.handler/Handler]
-  (case type
-    :request (register-request-handler! handler)
-    :notification (register-notification-handler! handler)))
 
 (s/defn ^:private register-handlers!
   [handlers :- models.handler/Handlers]

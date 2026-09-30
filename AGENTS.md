@@ -34,9 +34,13 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
   ```
   - `:doc` is a **required** key (`s/Str`), not a comment or an optional annotation. A handler without it fails
     `s/validate` at init with `{:doc missing-required-key}`.
-  - `:type` picks the multimethod — `:request` registers `receive-request`, `:notification` registers
-    `receive-notification`. Return the **result value directly** from a `:request` handler (the server wraps it
-    as `result`); returning `{:result ...}` double-wraps. A return that looks like `{:error ...}` becomes an error response.
+  - `register-handler!` is a `defmulti` dispatching on `(:type handler)`, with an `s/defmethod` per type. Each
+    method calls `defmethod` on the matching jsonrpc4clj multimethod — `receive-request` for `:request`,
+    `receive-notification` for `:notification` — so the multimethod on the *jsonrpc4clj* side is chosen by
+    which `defmethod` of ours runs, not by a lookup table. Dispatch is on `(:type handler)`, not `:type` as a
+    bare key, matching `ell-iot/adapters/metric.clj` and `beagle-cli`.
+  - Return the **result value directly** from a `:request` handler (the server wraps it as `result`);
+    returning `{:result ...}` double-wraps. A return that looks like `{:error ...}` becomes an error response.
   - `:interceptors` and `:handler-fn` are both **context transformers** `(fn [context] context)`, not Pedestal HTTP
     handlers. Do **not** coerce with `pedestal.interceptor/-interceptor`: its `wrap-handler` passes `(:request ctx)`
     to the fn and stores `:response`, which silently yields `nil` here. `fn->interceptor` builds the record directly.
