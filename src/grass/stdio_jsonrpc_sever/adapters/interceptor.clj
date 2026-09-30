@@ -5,7 +5,8 @@
            (io.pedestal.interceptor Interceptor)))
 
 (s/defn fn->interceptor :- Interceptor
-  [name handler-fn :- IFn]
+  [name :- s/Keyword
+   handler-fn :- IFn]
   (pedestal.interceptor/interceptor
    {:name  name
     :enter handler-fn}))

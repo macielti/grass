@@ -4,6 +4,7 @@
 
 (s/defschema Handler
   {:method       s/Str
+   :doc          s/Str
    :interceptors [IFn]
    :handler-fn   IFn
    :type         (s/enum :request :notification)})

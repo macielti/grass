@@ -16,4 +16,7 @@
 
   :plugins [[com.github.liquidz/antq "RELEASE"]]
 
+  :profiles {:dev {:test-paths   ["test/unit" "test/integration" "test/helpers"]
+                   :dependencies [[nubank/matcher-combinators "3.10.0"]]}}
+
   :repl-options {:init-ns grass.components})

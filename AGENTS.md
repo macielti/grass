@@ -27,10 +27,13 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
 - **Handler map** (prismatic schema in `grass.stdio-jsonrpc-sever.models.handler`, validated in `init-key`):
   ```clojure
   {:method       "tools/call"            ; string
+   :doc          "Calls a tool"          ; string, required
    :interceptors [#(fn [context] ...)]   ; vector of fns, run before handler-fn
    :handler-fn   (fn [context] ...)      ; fn
    :type         :notification}          ; :request | :notification
   ```
+  - `:doc` is a **required** key (`s/Str`), not a comment or an optional annotation. A handler without it fails
+    `s/validate` at init with `{:doc missing-required-key}`.
   - `:type` picks the multimethod — `:request` registers `receive-request`, `:notification` registers
     `receive-notification`. Return the **result value directly** from a `:request` handler (the server wraps it
     as `result`); returning `{:result ...}` double-wraps. A return that looks like `{:error ...}` becomes an error response.
@@ -66,5 +69,36 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
 
 ## Testing
 
-- Test namespace: `grass.core-test`
-- Current test is a placeholder that fails — replace with real tests as features are implemented.
+- Tests live in `test/unit/`, mirroring the `src/` tree: `test/unit/grass/<path>/<name>_test.clj` for
+  `src/grass/<path>/<name>.clj`. The test ns is the source ns with a `-test` suffix, and it requires the
+  source ns with its own alias (`grass.stdio-jsonrpc-sever.adapters.interceptor` -> `adapters.interceptor`).
+  This is the dominant sibling layout (`baiacu`, `risky`, `beagle-cli` all split `test/unit`,
+  `test/integration`, `test/helpers`); `project.clj` sets `:test-paths` to match.
+- **Test our code, not the library's.** Cover the behaviour a namespace in `src/grass/` is responsible for —
+  the shape it builds and the contract it exposes. Do **not** assert on behaviour that a dependency already
+  guarantees on its own (interceptor chain ordering, what a chain returns, how a library validates its own
+  arguments, what a macro expands to). If that behaviour ever changes upstream it arrives as a published
+  break change, and our test would fail without telling us anything about our code. A test should only fail
+  when *we* changed something.
+  - Concretely, `adapters/interceptor` is tested only on the result: that it returns a Pedestal `Interceptor`
+    carrying the given `:name`, and that it does not build one from a non-fn handler. It is **not** tested on
+    the fields of the record we happen to populate (`:enter` being a fn), nor on what Pedestal does with that
+    record — how `io.pedestal.interceptor.chain/execute` orders the enters, or what context it hands them.
+    A one-key pass-through like this adapter has a two-assertion test; anything more is testing Pedestal.
+    Prefer a single `match?` on the whole record over one assertion per key.
+  - Before adding an assertion, ask which file someone would have to edit for it to go red. If the answer is a
+    file outside `src/grass/`, drop the test.
+- `matcher-combinators` is the assertion library of choice (`match?`), with `clojure.test`'s
+  `is` / `testing` for the surrounding shape — the house pattern in `baiacu` and `risky`.
+- `schema.test/deftest` wraps a test to also assert the fn's return value matches its declared
+  return schema. Use it for adapters with a `:-` return annotation; plain `deftest` is fine otherwise.
+- `test.helper.schema/generate` from `net.clojars.macielti/common-test-clj` builds fixture data from a
+  schema instead of a hand-written map, so fixtures track schema changes.
+- **`s/defn` arglist annotations do not validate at runtime by default.** `s/defn` records
+  `:- Long`, `:- IFn` etc. in the arglist metadata only; enforcement needs `s/with-fn-validation` around
+  the call. So a bad argument to an annotated fn usually surfaces as whatever the *body* throws, not as an
+  `ExceptionInfo`. Note Pedestal's `interceptor` raises an `AssertionError`, which is an `Error` — so
+  `(is (thrown? Exception ...))` silently misses it; assert on `AssertionError` instead. This is worth
+  knowing while reading the schemas, not worth a test of its own.
+- `test/grass/core_test.clj` is still the template placeholder and fails (`(is (= 0 1))`). It sits outside
+  `test/unit/`, so it only runs because Leiningen's default `test` path is still on the classpath.
