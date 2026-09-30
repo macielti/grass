@@ -74,10 +74,12 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
   - The token is threaded into the arrangement as `{:components {:auvp {:token ...}}}`, so a handler reads it
     with `(get-in context [:components :auvp :token])`. It is a plain map, not an Integrant component — making
     it one would need a real `ig/init-key` just to hold a string.
-  - `start-system!` calls `jsonrpc4clj.server/discarding-stdout` **before** `ig/init`, because stdout is the
-    JSON-RPC wire and anything logged or printed after startup would corrupt the client's stream.
   - It registers the JVM shutdown hook per the style guide — `(.addShutdownHook (Runtime/getRuntime) (Thread.
     #(ig/halt! system)))` — which is also what lets `ig/halt!` close the `ChanServer`.
+  - It does **not** call `jsonrpc4clj.server/discarding-stdout` for now. Nothing in the current path prints to
+    stdout: SLF4J goes to stderr, and the `receive-*` multimethods already have `*out*` discarded by the server.
+    If a background thread or a library ever gains a `println`, re-add `(server/discarding-stdout)` **before**
+    `ig/init` — it has to be installed before anything can log, and a stray write corrupts the client's stream.
   - `:handlers` is currently `[]`: the component starts and answers nothing yet. Adding a tool means adding
     its handler to that vector, not to the component.
 

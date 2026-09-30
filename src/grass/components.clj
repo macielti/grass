@@ -2,7 +2,6 @@
   (:require [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
             [integrant.core :as ig]
-            [jsonrpc4clj.server :as server]
             [schema.core :as s]
             [grass.stdio-jsonrpc-sever.component :as component.stdio-jsonrpc-sever])
   (:gen-class))
@@ -22,8 +21,6 @@
 
 (s/defn ^:private start-system!
   [auvp-token :- s/Str]
-  ;; stdout is the JSON-RPC wire, so anything diagnostic has to go to stderr.
-  (server/discarding-stdout)
   (let [system (ig/init (arrangement auvp-token))]
     (.addShutdownHook (Runtime/getRuntime)
                       (Thread. #(ig/halt! system)))
