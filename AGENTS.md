@@ -73,32 +73,39 @@ MCP server (stdio JSON-RPC) for AUVP portfolio consolidation. Clojure + Leininge
   `src/grass/<path>/<name>.clj`. The test ns is the source ns with a `-test` suffix, and it requires the
   source ns with its own alias (`grass.stdio-jsonrpc-sever.adapters.interceptor` -> `adapters.interceptor`).
   This is the dominant sibling layout (`baiacu`, `risky`, `beagle-cli` all split `test/unit`,
-  `test/integration`, `test/helpers`); `project.clj` sets `:test-paths` to match.
+  `test/integration`, `test/helpers`); `project.clj` sets `:test-paths` to match. `test/integration` and
+  `test/helpers` are declared but not yet created — git does not track empty dirs.
 - **Test our code, not the library's.** Cover the behaviour a namespace in `src/grass/` is responsible for —
   the shape it builds and the contract it exposes. Do **not** assert on behaviour that a dependency already
   guarantees on its own (interceptor chain ordering, what a chain returns, how a library validates its own
   arguments, what a macro expands to). If that behaviour ever changes upstream it arrives as a published
   break change, and our test would fail without telling us anything about our code. A test should only fail
   when *we* changed something.
-  - Concretely, `adapters/interceptor` is tested only on the result: that it returns a Pedestal `Interceptor`
-    carrying the given `:name`, and that it does not build one from a non-fn handler. It is **not** tested on
-    the fields of the record we happen to populate (`:enter` being a fn), nor on what Pedestal does with that
-    record — how `io.pedestal.interceptor.chain/execute` orders the enters, or what context it hands them.
-    A one-key pass-through like this adapter has a two-assertion test; anything more is testing Pedestal.
-    Prefer a single `match?` on the whole record over one assertion per key.
+  - Concretely, `adapters/interceptor` has a single `testing` block: that it returns a Pedestal `Interceptor`
+    carrying the given `:name`. It is **not** tested on the fields of the record we happen to populate
+    (`:enter` being a fn), on argument validation (the `s/deftest` wrapper covers that), nor on what Pedestal
+    does with the record afterwards — how `io.pedestal.interceptor.chain/execute` orders the enters, or what
+    context it hands them. A one-key pass-through like this adapter does not need more than that.
   - Before adding an assertion, ask which file someone would have to edit for it to go red. If the answer is a
     file outside `src/grass/`, drop the test.
 - `matcher-combinators` is the assertion library of choice (`match?`), with `clojure.test`'s
   `is` / `testing` for the surrounding shape — the house pattern in `baiacu` and `risky`.
-- `schema.test/deftest` wraps a test to also assert the fn's return value matches its declared
-  return schema. Use it for adapters with a `:-` return annotation; plain `deftest` is fine otherwise.
+- **Use `schema.test/deftest`, not `clojure.test/deftest`.** It expands to `clojure.test/deftest` with the
+  body wrapped in `s/with-fn-validation`, which turns the `:-` arglist annotations on for every call made in
+  the test. That makes the annotations *enforced* rather than documentation, and it means you do not write
+  assertions for argument validation — a bad call raises `ExceptionInfo` on its own, so a
+  `(is (thrown? ...))` for "rejects a non-fn handler" and similar is redundant. Prefer
+  `(:require [schema.test])` and calling `schema.test/deftest` by full name, as the siblings do.
+  - Note what this does *not* cover: Pedestal's own asserts. Under fn validation the schema fires first, so
+    a test that wants to pin Pedestal's `AssertionError` would have to step outside the validation wrapper.
+    We do not test that — it is the library's guard, not ours.
+- `s/defn` arglist annotations (`:- Long`, `:- IFn`, ...) are recorded in metadata and are **inert** until a
+  call happens inside `s/with-fn-validation` — which `s/deftest` supplies. That is why a schema is worth
+  reading as documentation of the contract, and why it is trustworthy inside our own tests.
+- To validate a whole namespace rather than one test at a time, add the fixture
+  `(use-fixtures :once schema.test/validate-schemas)`.
 - `test.helper.schema/generate` from `net.clojars.macielti/common-test-clj` builds fixture data from a
   schema instead of a hand-written map, so fixtures track schema changes.
-- **`s/defn` arglist annotations do not validate at runtime by default.** `s/defn` records
-  `:- Long`, `:- IFn` etc. in the arglist metadata only; enforcement needs `s/with-fn-validation` around
-  the call. So a bad argument to an annotated fn usually surfaces as whatever the *body* throws, not as an
-  `ExceptionInfo`. Note Pedestal's `interceptor` raises an `AssertionError`, which is an `Error` — so
-  `(is (thrown? Exception ...))` silently misses it; assert on `AssertionError` instead. This is worth
-  knowing while reading the schemas, not worth a test of its own.
-- `test/grass/core_test.clj` is still the template placeholder and fails (`(is (= 0 1))`). It sits outside
-  `test/unit/`, so it only runs because Leiningen's default `test` path is still on the classpath.
+- The template placeholder test was removed along with its `test/grass/` folder. Note that Leiningen's default
+  `:test-paths` is `["test"]`, and setting `:test-paths` in the `:dev` profile *adds* to that default rather
+  than replacing it — so a stray test outside `test/unit/` still runs. Keep every test under `test/unit/`.
