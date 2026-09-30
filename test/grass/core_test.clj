@@ -1,6 +1,6 @@
 (ns grass.core-test
   (:require [clojure.test :refer :all]
-            [grass.core :refer :all]))
+            [grass.components :refer :all]))
 
 (deftest a-test
   (testing "FIXME, I fail."
